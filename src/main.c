@@ -895,6 +895,7 @@ int main(
     char** argv)
 {
     SDL_SetAppMetadata(WINDOW_NAME, NULL, NULL);
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
     if (!SDL_Init(SDL_INIT_VIDEO))
     {
         SDL_Log("Failed to initialize SDL: %s", SDL_GetError());
