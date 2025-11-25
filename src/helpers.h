@@ -14,7 +14,7 @@
 #define clamp(x, a, b) min(b, max(a, x))
 #define deg(rad) ((rad) * 180.0 / PI)
 #define rad(deg) ((deg) * PI / 180.0)
-#define abs(x) ((x) > 0 ? (x) : -(x))
+// #define abs(x) ((x) > 0 ? (x) : -(x)) already in stdlib
 
 #ifndef NDEBUG
 #define assert(e) SDL_assert_always(e)
@@ -22,23 +22,17 @@
 #define assert(e)
 #endif
 
-typedef enum
-{
-    DIRECTION_N,
-    DIRECTION_S,
-    DIRECTION_E,
-    DIRECTION_W,
-    DIRECTION_U,
-    DIRECTION_D,
-    DIRECTION_2 = 4,
-    DIRECTION_3 = 6,
-}
-direction_t;
+typedef enum {
+	DIRECTION_N,
+	DIRECTION_S,
+	DIRECTION_E,
+	DIRECTION_W,
+	DIRECTION_U,
+	DIRECTION_D,
+	DIRECTION_2 = 4,
+	DIRECTION_3 = 6,
+} direction_t;
 
 extern const int directions[][3];
 
-void sort_2d(
-    const int x,
-    const int z,
-    void* data,
-    const int size);
+void sort_2d(const int x, const int z, void* data, const int size);
