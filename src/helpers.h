@@ -16,6 +16,7 @@
 
 #define assert(e) SDL_assert(e)
 #define static_assert(a, b) _Static_assert(a, b)
+// #define static_cast(a, b) SDL_static_cast(a, b)
 
 typedef enum {
 	DIRECTION_N,
@@ -31,3 +32,5 @@ typedef enum {
 extern const int directions[][3];
 
 void sort_2d(const int x, const int z, void* data, const int size);
+
+bool check_resource(const void* resource, const char* name);
