@@ -42,8 +42,11 @@ static float cooldown;
 static block_t selected = BLOCK_GRASS;
 
 static bool create_atlas() {
+	// Load atlas texture from disk
 	atlas_surface = SDL_LoadPNG("atlas.png");
 	check_resource(atlas_surface, "create atlas surface");
+
+	// Create 2D array texture for atlas storage (one layer per block)
 	SDL_GPUTextureCreateInfo atlus_tci = {
 		.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
 		.type = SDL_GPU_TEXTURETYPE_2D_ARRAY,
@@ -55,6 +58,8 @@ static bool create_atlas() {
 	};
 	atlas_texture = SDL_CreateGPUTexture(device, &atlus_tci);
 	check_resource(atlas_texture, "create atlas texture");
+
+	// Create temp texture to hold loaded PNG data
 	SDL_GPUTextureCreateInfo texture_tci = {
 		.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
 		.type = SDL_GPU_TEXTURETYPE_2D,
@@ -66,34 +71,37 @@ static bool create_atlas() {
 	};
 	SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &texture_tci);
 	check_resource(texture, "create texture");
+
+	// Create transfer buffer for uploading surface data to GPU
 	SDL_GPUTransferBufferCreateInfo tbci = {
 		.size = atlas_surface->w * atlas_surface->h * SDL_BYTESPERPIXEL(atlas_surface->format),
 		.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
 	};
 	SDL_GPUTransferBuffer* buffer = SDL_CreateGPUTransferBuffer(device, &tbci);
 	check_resource(buffer, "create transfer buffer");
+
+	// Map GPU transfer buffer to CPU address space for writing pixel data
 	void* data = SDL_MapGPUTransferBuffer(device, buffer, 0);
 	check_resource(data, "map transfer buffer");
+
+	// Copy atlas_surface bytes into the mapped GPU transfer buffer
 	SDL_memcpy(data, atlas_surface->pixels,
 			   atlas_surface->w * atlas_surface->h * SDL_BYTESPERPIXEL(atlas_surface->format));
 	SDL_UnmapGPUTransferBuffer(device, buffer);
+
+	// Acquire buffer for recording GPU commands
 	SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
-	if (!commands) {
-		SDL_Log("Failed to acquire command buffer: %s", SDL_GetError());
-		return false;
-	}
+	check_resource(commands, "acquire command buffer");
+	// Begin copy pass to record transfer from transfer buffer to texture
 	SDL_GPUCopyPass* pass = SDL_BeginGPUCopyPass(commands);
-	if (!pass) {
-		SDL_Log("Failed to begin copy pass: %s", SDL_GetError());
-		return false;
-	}
-	SDL_GPUTextureTransferInfo tti = {0};
-	SDL_GPUTextureRegion region = {0};
-	tti.transfer_buffer = buffer;
-	region.texture = texture;
-	region.w = atlas_surface->w;
-	region.h = atlas_surface->h;
-	region.d = 1;
+	check_resource(pass, "begin copy pass");
+	SDL_GPUTextureTransferInfo tti = {.transfer_buffer = buffer};
+	SDL_GPUTextureRegion region = {
+		.texture = texture,
+		.w = atlas_surface->w,
+		.h = atlas_surface->h,
+		.d = 1,
+	};
 	SDL_UploadToGPUTexture(pass, &tti, &region, 0);
 	SDL_EndGPUCopyPass(pass);
 	for (int i = 0; i < ATLAS_WIDTH / BLOCK_WIDTH; i++) {
@@ -128,17 +136,11 @@ static bool create_samplers() {
 		.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
 	};
 	linear_sampler = SDL_CreateGPUSampler(device, &sci);
-	if (!linear_sampler) {
-		SDL_Log("Failed to create linear sampler: %s", SDL_GetError());
-		return false;
-	}
+	check_resource(linear_sampler, "create linear sampler");
 	sci.min_filter = SDL_GPU_FILTER_NEAREST;
 	sci.mag_filter = SDL_GPU_FILTER_NEAREST;
 	nearest_sampler = SDL_CreateGPUSampler(device, &sci);
-	if (!nearest_sampler) {
-		SDL_Log("Failed to create nearest sampler: %s", SDL_GetError());
-		return false;
-	}
+	check_resource(nearest_sampler, "create nearest sampler");
 	return true;
 }
 
@@ -153,10 +155,7 @@ static bool create_textures() {
 		.num_levels = 1,
 	};
 	shadow_texture = SDL_CreateGPUTexture(device, &tci);
-	if (!shadow_texture) {
-		SDL_Log("Failed to create shadow texture: %s", SDL_GetError());
-		return false;
-	}
+	check_resource(shadow_texture, "create shadow texture");
 	return true;
 }
 
