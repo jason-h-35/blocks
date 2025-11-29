@@ -1,11 +1,12 @@
+#include "SDL3/SDL_gpu.h"
 #include "block.h"
 #include "camera.h"
+#include "config.h"
 #include "database.h"
+#include "helpers.h"
 #include "pipeline.h"
 #include "raycast.h"
 #include "world.h"
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_main.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -42,48 +43,39 @@ static block_t selected = BLOCK_GRASS;
 
 static bool create_atlas() {
 	atlas_surface = SDL_LoadPNG("atlas.png");
-	if (!atlas_surface) {
-		SDL_Log("Failed to create atlas surface: %s", SDL_GetError());
-		return false;
-	}
-	SDL_GPUTextureCreateInfo tci = {0};
-	tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-	tci.type = SDL_GPU_TEXTURETYPE_2D_ARRAY;
-	tci.layer_count_or_depth = ATLAS_WIDTH / BLOCK_WIDTH;
-	tci.num_levels = ATLAS_LEVELS;
-	tci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-	tci.width = BLOCK_WIDTH;
-	tci.height = BLOCK_WIDTH;
-	atlas_texture = SDL_CreateGPUTexture(device, &tci);
-	if (!atlas_texture) {
-		SDL_Log("Failed to create atlas texture: %s", SDL_GetError());
-		return false;
-	}
-	tci.type = SDL_GPU_TEXTURETYPE_2D;
-	tci.layer_count_or_depth = 1;
-	tci.num_levels = 1;
-	tci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-	tci.width = atlas_surface->w;
-	tci.height = atlas_surface->h;
-	SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &tci);
-	if (!texture) {
-		SDL_Log("Failed to create texture: %s", SDL_GetError());
-		return false;
-	}
-	SDL_GPUTransferBufferCreateInfo tbci = {0};
-	tbci.size = atlas_surface->w * atlas_surface->h * 4;
-	tbci.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+	check_resource(atlas_surface, "create atlas surface");
+	SDL_GPUTextureCreateInfo atlus_tci = {
+		.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+		.type = SDL_GPU_TEXTURETYPE_2D_ARRAY,
+		.layer_count_or_depth = ATLAS_WIDTH / BLOCK_WIDTH,
+		.num_levels = ATLAS_LEVELS,
+		.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET,
+		.width = BLOCK_WIDTH,
+		.height = BLOCK_WIDTH,
+	};
+	atlas_texture = SDL_CreateGPUTexture(device, &atlus_tci);
+	check_resource(atlas_texture, "create atlas texture");
+	SDL_GPUTextureCreateInfo texture_tci = {
+		.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+		.type = SDL_GPU_TEXTURETYPE_2D,
+		.layer_count_or_depth = 1,
+		.num_levels = 1,
+		.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET,
+		.width = atlas_surface->w,
+		.height = atlas_surface->h,
+	};
+	SDL_GPUTexture* texture = SDL_CreateGPUTexture(device, &texture_tci);
+	check_resource(texture, "create texture");
+	SDL_GPUTransferBufferCreateInfo tbci = {
+		.size = atlas_surface->w * atlas_surface->h * SDL_BYTESPERPIXEL(atlas_surface->format),
+		.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD,
+	};
 	SDL_GPUTransferBuffer* buffer = SDL_CreateGPUTransferBuffer(device, &tbci);
-	if (!buffer) {
-		SDL_Log("Failed to create transfer buffer: %s", SDL_GetError());
-		return false;
-	}
+	check_resource(buffer, "create transfer buffer");
 	void* data = SDL_MapGPUTransferBuffer(device, buffer, 0);
-	if (!data) {
-		SDL_Log("Failed to map transfer buffer: %s", SDL_GetError());
-		return false;
-	}
-	memcpy(data, atlas_surface->pixels, atlas_surface->w * atlas_surface->h * 4);
+	check_resource(data, "map transfer buffer");
+	SDL_memcpy(data, atlas_surface->pixels,
+			   atlas_surface->w * atlas_surface->h * SDL_BYTESPERPIXEL(atlas_surface->format));
 	SDL_UnmapGPUTransferBuffer(device, buffer);
 	SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
 	if (!commands) {
@@ -127,13 +119,14 @@ static bool create_atlas() {
 }
 
 static bool create_samplers() {
-	SDL_GPUSamplerCreateInfo sci = {0};
-	sci.min_filter = SDL_GPU_FILTER_LINEAR;
-	sci.mag_filter = SDL_GPU_FILTER_LINEAR;
-	sci.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
-	sci.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-	sci.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
-	sci.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+	SDL_GPUSamplerCreateInfo sci = {
+		.min_filter = SDL_GPU_FILTER_LINEAR,
+		.mag_filter = SDL_GPU_FILTER_LINEAR,
+		.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST,
+		.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+		.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+		.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+	};
 	linear_sampler = SDL_CreateGPUSampler(device, &sci);
 	if (!linear_sampler) {
 		SDL_Log("Failed to create linear sampler: %s", SDL_GetError());
@@ -150,14 +143,15 @@ static bool create_samplers() {
 }
 
 static bool create_textures() {
-	SDL_GPUTextureCreateInfo tci = {0};
-	tci.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-	tci.type = SDL_GPU_TEXTURETYPE_2D;
-	tci.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
-	tci.width = SHADOW_SIZE;
-	tci.height = SHADOW_SIZE;
-	tci.layer_count_or_depth = 1;
-	tci.num_levels = 1;
+	SDL_GPUTextureCreateInfo tci = {
+		.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER,
+		.type = SDL_GPU_TEXTURETYPE_2D,
+		.format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
+		.width = SHADOW_SIZE,
+		.height = SHADOW_SIZE,
+		.layer_count_or_depth = 1,
+		.num_levels = 1,
+	};
 	shadow_texture = SDL_CreateGPUTexture(device, &tci);
 	if (!shadow_texture) {
 		SDL_Log("Failed to create shadow texture: %s", SDL_GetError());
@@ -263,16 +257,18 @@ SDL_Surface* create_icon(const block_t block) {
 		SDL_Log("Failed to create icon surface: %s", SDL_GetError());
 		return NULL;
 	}
-	SDL_Rect src;
-	src.x = blocks[block][0] * BLOCK_WIDTH;
-	src.y = 0;
-	src.w = BLOCK_WIDTH;
-	src.h = BLOCK_WIDTH;
-	SDL_Rect dst;
-	dst.x = 0;
-	dst.y = 0;
-	dst.w = BLOCK_WIDTH;
-	dst.h = BLOCK_WIDTH;
+	SDL_Rect src = {
+		.x = blocks[block][0] * BLOCK_WIDTH,
+		.y = 0,
+		.w = BLOCK_WIDTH,
+		.h = BLOCK_WIDTH,
+	};
+	SDL_Rect dst = {
+		.x = 0,
+		.y = 0,
+		.w = BLOCK_WIDTH,
+		.h = BLOCK_WIDTH,
+	};
 	if (!SDL_BlitSurface(atlas_surface, &src, icon, &dst)) {
 		SDL_Log("Failed to blit icon surface: %s", SDL_GetError());
 		SDL_DestroySurface(icon);
@@ -282,17 +278,32 @@ SDL_Surface* create_icon(const block_t block) {
 }
 
 static bool create_vbos() {
-	const float cube[][3] = {
-		{-1, -1, -1}, {1, -1, -1}, {1, 1, -1}, {-1, -1, -1}, {1, 1, -1}, {-1, 1, -1},
-		{1, -1, 1},	  {1, 1, 1},   {-1, 1, 1}, {1, -1, 1},	 {-1, 1, 1}, {-1, -1, 1},
-		{-1, -1, -1}, {-1, 1, -1}, {-1, 1, 1}, {-1, -1, -1}, {-1, 1, 1}, {-1, -1, 1},
-		{1, -1, -1},  {1, -1, 1},  {1, 1, 1},  {1, -1, -1},	 {1, 1, 1},	 {1, 1, -1},
-		{-1, 1, -1},  {1, 1, -1},  {1, 1, 1},  {-1, 1, -1},	 {1, 1, 1},	 {-1, 1, 1},
-		{-1, -1, -1}, {-1, -1, 1}, {1, -1, 1}, {-1, -1, -1}, {1, -1, 1}, {1, -1, -1},
+	// clang-format off
+const float cube[][3] = {
+	// Back face (-Z)
+	{-1, -1, -1}, { 1, -1, -1}, { 1,  1, -1},
+	{-1, -1, -1}, { 1,  1, -1}, {-1,  1, -1},
+	// Front face (+Z)
+	{ 1, -1,  1}, { 1,  1,  1}, {-1,  1,  1},
+	{ 1, -1,  1}, {-1,  1,  1}, {-1, -1,  1},
+	// Left face (-X)
+	{-1, -1, -1}, {-1,  1, -1}, {-1,  1,  1},
+	{-1, -1, -1}, {-1,  1,  1}, {-1, -1,  1},
+	// Right face (+X)
+	{ 1, -1, -1}, { 1, -1,  1}, { 1,  1,  1},
+	{ 1, -1, -1}, { 1,  1,  1}, { 1,  1, -1},
+	// Top face (+Y)
+	{-1,  1, -1}, { 1,  1, -1}, { 1,  1,  1},
+	{-1,  1, -1}, { 1,  1,  1}, {-1,  1,  1},
+	// Bottom face (-Y)
+	{-1, -1, -1}, {-1, -1,  1}, { 1, -1,  1},
+	{-1, -1, -1}, { 1, -1,  1}, { 1, -1, -1},
+};
+	// clang-format on
+	SDL_GPUBufferCreateInfo bci = {
+		.usage = SDL_GPU_BUFFERUSAGE_VERTEX,
+		.size = sizeof(cube),
 	};
-	SDL_GPUBufferCreateInfo bci = {0};
-	bci.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-	bci.size = sizeof(cube);
 	cube_vbo = SDL_CreateGPUBuffer(device, &bci);
 	if (!cube_vbo) {
 		SDL_Log("Failed to create vertex buffer: %s", SDL_GetError());
@@ -311,7 +322,7 @@ static bool create_vbos() {
 		SDL_Log("Failed to map transfer buffer: %s", SDL_GetError());
 		return false;
 	}
-	memcpy(data, cube, sizeof(cube));
+	SDL_memcpy(data, cube, sizeof(cube));
 	SDL_UnmapGPUTransferBuffer(device, tbo);
 	SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
 	if (!commands) {
