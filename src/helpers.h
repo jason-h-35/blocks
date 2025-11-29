@@ -1,26 +1,21 @@
 #pragma once
 
 #include <SDL3/SDL.h>
-#include <assert.h>
+#include <SDL3/SDL_stdinc.h>
 
-#undef assert
-#undef min
-#undef max
+#define EPSILON SDL_FLT_EPSILON
+#define PI SDL_PI_F
 
-#define EPSILON 0.000001
-#define PI 3.14159265359
-#define max(a, b) ((a) > (b) ? (a) : (b))
-#define min(a, b) ((a) < (b) ? (a) : (b))
-#define clamp(x, a, b) min(b, max(a, x))
+#define max(a, b) SDL_max(a, b)
+#define min(a, b) SDL_min(a, b)
+#define clamp(x, a, b) SDL_clamp(x, a, b)
+
 #define deg(rad) ((rad) * 180.0 / PI)
 #define rad(deg) ((deg) * PI / 180.0)
 // #define abs(x) ((x) > 0 ? (x) : -(x)) already in stdlib
 
-#ifndef NDEBUG
-#define assert(e) SDL_assert_always(e)
-#else
-#define assert(e)
-#endif
+#define assert(e) SDL_assert(e)
+#define static_assert(a, b) _Static_assert(a, b)
 
 typedef enum {
 	DIRECTION_N,
